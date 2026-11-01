@@ -1,0 +1,27 @@
+# Integración continua: en cada push o pull request a main se recorren
+# todos los flujos de la app en un navegador simulado (jsdom).
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  flujos:
+    name: Flujos de almacén
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Tests de flujos
+        run: npm test

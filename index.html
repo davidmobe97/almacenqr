@@ -1,0 +1,878 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="AlmacénQR: demo de programa de gestión de almacén (SGA) con códigos QR para móvil o PDA: entradas, salidas, ubicaciones, preparación de pedidos, recepción de albaranes e inventario.">
+<meta name="theme-color" content="#1f3a56">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>AlmacénQR</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+<style>
+/* Layout: app de móvil a una columna (máx. 560 px), cabecera fija arriba y barra de navegación abajo con el botón de escanear en el centro. Señalética de almacén: tinta azul acero + ámbar de seguridad. */
+:root{
+  --bg:#eef1f4; --panel:#ffffff; --ink:#16202b; --ink-2:#4a5866; --line:#d5dbe2;
+  --acc:#f2a900; --acc-ink:#1b1400; --steel:#1f3a56; --steel-2:#2d5279;
+  --ok:#1d8a4e; --warn:#b86e00; --bad:#c2352b; --chip:#e4e9ef;
+  --f-ui:"IBM Plex Sans Condensed","Arial Narrow",system-ui,sans-serif;
+  --f-code:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+  --r:10px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f151c; --panel:#18212b; --ink:#e7edf3; --ink-2:#9aa8b6; --line:#2a3745;
+  --acc:#f5b622; --acc-ink:#1b1400; --steel:#9cc2ea; --steel-2:#7fb0e0;
+  --ok:#3fbf78; --warn:#e3a33a; --bad:#ef6a5f; --chip:#22303d; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f151c; --panel:#18212b; --ink:#e7edf3; --ink-2:#9aa8b6; --line:#2a3745;
+  --acc:#f5b622; --acc-ink:#1b1400; --steel:#9cc2ea; --steel-2:#7fb0e0;
+  --ok:#3fbf78; --warn:#e3a33a; --bad:#ef6a5f; --chip:#22303d; color-scheme:dark}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-ui);font-size:15px;line-height:1.4}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:30;background:#1f3a56}
+.app{max-width:560px;margin:0 auto;min-height:100%;display:flex;flex-direction:column}
+header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:#1f3a56;color:#fff;
+  padding-block:10px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  display:flex;align-items:center;gap:10px}
+.logo{width:30px;height:30px;border-radius:6px;background:#f2a900;display:grid;place-items:center;flex:none}
+.logo svg{width:20px;height:20px}
+.top h1{font-size:18px;margin:0;font-weight:700;letter-spacing:.2px}
+.top .sub{font-size:12px;opacity:.8}
+.top .user{margin-left:auto;font-size:12px;background:rgba(255,255,255,.14);border:0;color:#fff;border-radius:20px;padding:6px 10px;font-family:var(--f-ui);cursor:pointer}
+main{flex:1;padding-block:14px 110px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:14px}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.8px;color:var(--ink-2);margin:4px 0 0;font-weight:600}
+.demo-band{font-size:12.5px;color:var(--ink-2);background:var(--chip);border-radius:8px;padding:8px 10px;margin:0}
+.kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:10px 12px}
+.kpi b{display:block;font-size:26px;font-variant-numeric:tabular-nums;line-height:1.1}
+.kpi span{font-size:12.5px;color:var(--ink-2)}
+.acciones{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.acc-btn{border:0;border-radius:var(--r);padding:12px 6px;font-family:var(--f-ui);font-weight:700;font-size:15px;cursor:pointer;color:#fff;display:flex;flex-direction:column;align-items:center;gap:4px}
+.acc-btn small{font-weight:500;font-size:11.5px;opacity:.9}
+.acc-btn:disabled{opacity:.4;cursor:default}
+.acc-btn.in{background:#1d8a4e} .acc-btn.out{background:#c2352b} .acc-btn.mv{background:#2d5279}
+.tareas{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.tarea{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:10px;text-align:left;cursor:pointer;font-family:inherit;color:inherit;display:flex;flex-direction:column;gap:2px}
+.tarea b{font-size:24px;font-variant-numeric:tabular-nums;line-height:1.1}
+.tarea span{font-size:12.5px;color:var(--ink-2);line-height:1.2}
+.tarea.hot{border-color:var(--acc);box-shadow:inset 0 -3px 0 var(--acc)}
+.list{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.row{display:flex;gap:10px;align-items:center;padding:10px 12px;border-top:1px solid var(--line);cursor:pointer;background:none;width:100%;text-align:left;color:inherit;font-family:inherit;font-size:inherit;border-left:0;border-right:0;border-bottom:0}
+.row:first-child{border-top:0}
+.row.static{cursor:default}
+.row:focus-visible,.acc-btn:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+.row .main{flex:1;min-width:0;display:flex;flex-direction:column}
+.row .t{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .s{font-size:12.5px;color:var(--ink-2)}
+.row .n{font-variant-numeric:tabular-nums;font-weight:700;text-align:right}
+.code{font-family:var(--f-code);font-size:12.5px;background:var(--chip);border-radius:5px;padding:1px 6px;white-space:nowrap}
+.pill{font-size:11.5px;font-weight:700;border-radius:20px;padding:2px 8px;white-space:nowrap}
+.pill.in{background:color-mix(in srgb,var(--ok) 18%,transparent);color:var(--ok)}
+.pill.out{background:color-mix(in srgb,var(--bad) 18%,transparent);color:var(--bad)}
+.pill.mv{background:color-mix(in srgb,var(--steel-2) 20%,transparent);color:var(--steel-2)}
+.pill.low,.pill.adj{background:color-mix(in srgb,var(--warn) 20%,transparent);color:var(--warn)}
+.pill.done{background:var(--ok);color:#fff}
+.empty{padding:16px;color:var(--ink-2);font-size:14px}
+input,select{width:100%;font-family:var(--f-ui);font-size:16px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink)}
+label.f{display:flex;flex-direction:column;gap:5px;font-size:13px;color:var(--ink-2);font-weight:600}
+.with-scan{display:flex;gap:6px}
+.with-scan input,.with-scan select{flex:1;min-width:0}
+.scan-mini{flex:none;width:46px;border:0;border-radius:8px;background:var(--acc);color:var(--acc-ink);cursor:pointer;display:grid;place-items:center;font-family:var(--f-ui);font-weight:700}
+.scan-mini svg{width:22px;height:22px}
+.btn{border:0;border-radius:var(--r);padding:12px 16px;font-family:var(--f-ui);font-weight:700;font-size:16px;cursor:pointer;background:#1f3a56;color:#fff}
+.btn.sec{background:var(--chip);color:var(--ink)}
+.btn.acc{background:var(--acc);color:var(--acc-ink)}
+.btn.okb{background:#1d8a4e}
+.btn.badb{background:#c2352b}
+.btn.full{width:100%}
+.btn:disabled{opacity:.45;cursor:default}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap}
+.btn-row .btn{flex:1}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px;display:flex;flex-direction:column;gap:12px}
+.seg{display:grid;grid-template-columns:repeat(3,1fr);background:var(--chip);border-radius:10px;padding:4px;gap:4px}
+.seg.two{grid-template-columns:1fr 1fr}
+.seg button{border:0;background:none;padding:9px 4px;border-radius:7px;font-family:var(--f-ui);font-weight:700;font-size:14.5px;color:var(--ink-2);cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--panel);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.seg button[aria-pressed="true"].in{background:#1d8a4e;color:#fff}
+.seg button[aria-pressed="true"].out{background:#c2352b;color:#fff}
+.seg button[aria-pressed="true"].mv{background:#2d5279;color:#fff}
+.hint{font-size:12.5px;color:var(--ink-2);margin:0}
+.hint.bad{color:var(--bad);font-weight:600}
+.hint.ok{color:var(--ok);font-weight:600}
+nav.bottom{position:fixed;left:0;right:0;bottom:0;z-index:20;background:var(--panel);border-top:1px solid var(--line);
+  padding-bottom:env(safe-area-inset-bottom,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px)}
+nav.bottom .in{max-width:560px;margin:0 auto;display:grid;grid-template-columns:repeat(5,1fr);align-items:end}
+nav.bottom button{border:0;background:none;font-family:var(--f-ui);font-size:11.5px;color:var(--ink-2);padding:8px 2px 10px;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;position:relative}
+nav.bottom button svg{width:22px;height:22px}
+nav.bottom button[aria-current="page"]{color:var(--ink);font-weight:700}
+nav.bottom button .badge{position:absolute;top:4px;left:calc(50% + 6px);background:#c2352b;color:#fff;border-radius:10px;font-size:10.5px;font-weight:700;padding:0 5px;line-height:16px}
+nav.bottom button.scan{transform:translateY(-14px)}
+nav.bottom button.scan .ring{width:60px;height:60px;border-radius:50%;background:var(--acc);display:grid;place-items:center;box-shadow:0 4px 14px rgba(0,0,0,.25);color:var(--acc-ink)}
+nav.bottom button.scan .ring svg{width:30px;height:30px}
+.map{display:flex;flex-direction:column;gap:12px}
+.aisle{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:10px}
+.aisle h3{margin:0 0 8px;font-size:14px;display:flex;justify-content:space-between}
+.aisle h3 span{font-weight:500;color:var(--ink-2);font-size:12.5px}
+.racks{display:grid;grid-template-columns:repeat(6,1fr);gap:5px}
+.rack{display:flex;flex-direction:column-reverse;gap:3px}
+.slot{border:1px solid var(--line);border-radius:4px;height:30px;font-family:var(--f-code);font-size:10px;display:grid;place-items:center;cursor:pointer;background:var(--bg);color:var(--ink-2);padding:0}
+.slot.full{background:color-mix(in srgb,var(--steel-2) 30%,var(--panel));color:var(--ink);border-color:color-mix(in srgb,var(--steel-2) 60%,var(--line))}
+.slot.hl{outline:3px solid var(--acc);outline-offset:1px}
+.rack-n{font-family:var(--f-code);font-size:10.5px;text-align:center;color:var(--ink-2)}
+.zones{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.zone{border:1px dashed var(--line);border-radius:var(--r);padding:10px;background:var(--panel);cursor:pointer;text-align:left;font-family:inherit;color:inherit}
+.zone b{display:block}
+.legend{display:flex;gap:12px;font-size:12px;color:var(--ink-2);flex-wrap:wrap}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-2px;margin-right:4px;border:1px solid var(--line)}
+.sheet-bg{position:fixed;inset:0;background:rgba(5,10,15,.55);z-index:40;display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:var(--bg);width:100%;max-width:560px;max-height:94%;overflow:auto;border-radius:16px 16px 0 0;
+  padding-block:14px calc(18px + env(safe-area-inset-bottom,0px));padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:12px}
+.sheet-h{display:flex;align-items:center;gap:10px}
+.sheet-h h3{margin:0;font-size:18px;flex:1;min-width:0}
+.x{border:0;background:var(--chip);color:var(--ink);border-radius:50%;width:34px;height:34px;font-size:18px;cursor:pointer;flex:none}
+.video-box{position:relative;background:#000;border-radius:var(--r);overflow:hidden;aspect-ratio:1/1;max-width:100%}
+.video-box video{width:100%;height:100%;object-fit:cover}
+.video-box .frame{position:absolute;inset:18%;border:3px solid #f2a900;border-radius:12px;box-shadow:0 0 0 999px rgba(0,0,0,.35)}
+.photo-btn{display:flex;flex-direction:column;align-items:center;gap:8px;padding:20px 14px;border:2px dashed var(--line);border-radius:var(--r);background:var(--panel);cursor:pointer;color:var(--ink);font-family:inherit;font-size:16px;font-weight:700;width:100%}
+.photo-btn svg{width:44px;height:44px;color:var(--steel-2)}
+.photo-btn small{font-weight:400;color:var(--ink-2);font-size:13px}
+.sim-ok{border:1px dashed var(--acc);background:color-mix(in srgb,var(--acc) 12%,var(--panel));color:var(--ink);border-radius:8px;padding:10px;font-family:inherit;font-size:14px;cursor:pointer;text-align:left}
+.labels{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.label{background:#fff;color:#111;border:1px solid #c9cfd6;border-radius:8px;padding:10px;display:flex;flex-direction:column;align-items:center;gap:4px;text-align:center}
+.label svg{width:100%;max-width:150px;height:auto}
+.label .lc{font-family:var(--f-code);font-weight:600;font-size:14px}
+.label .ln{font-size:11.5px;line-height:1.2}
+.label.u{border:3px solid #111}
+.label.u .lc{font-size:18px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(96px + env(safe-area-inset-bottom,0px));z-index:60;background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:24px;font-weight:600;font-size:14px;max-width:calc(100% - 32px);box-shadow:0 6px 18px rgba(0,0,0,.25);text-align:center}
+.toast.bad{background:#c2352b;color:#fff}
+.det-head{display:flex;gap:12px;align-items:center}
+.det-head .qr{width:84px;flex:none;background:#fff;border-radius:6px;padding:4px}
+.det-head .qr svg{width:100%;height:auto;display:block}
+.tabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px}
+.tabs button{border:1px solid var(--line);background:var(--panel);border-radius:20px;padding:6px 12px;font-family:var(--f-ui);font-size:13.5px;cursor:pointer;color:var(--ink);white-space:nowrap}
+.tabs button[aria-pressed="true"]{background:#1f3a56;color:#fff;border-color:transparent}
+/* tareas guiadas */
+.paso{background:var(--panel);border:2px solid var(--acc);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:10px}
+.paso .ir{font-size:13px;color:var(--ink-2);text-transform:uppercase;letter-spacing:.6px;font-weight:600}
+.paso .ubi{font-family:var(--f-code);font-size:34px;font-weight:600;line-height:1}
+.paso .ubi-n{font-size:13px;color:var(--ink-2)}
+.paso .prod{font-weight:700;font-size:17px}
+.check{display:flex;gap:8px;align-items:center;font-size:14.5px}
+.check i{width:22px;height:22px;border-radius:50%;border:2px solid var(--line);display:grid;place-items:center;font-style:normal;font-size:13px;flex:none}
+.check.ok i{background:#1d8a4e;border-color:#1d8a4e;color:#fff}
+.check.ok{color:var(--ok);font-weight:600}
+.barra{height:8px;border-radius:8px;background:var(--chip);overflow:hidden}
+.barra > span{display:block;height:100%;background:var(--acc)}
+.cnt{display:flex;align-items:center;gap:6px}
+.cnt button{width:38px;height:38px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--ink);font-size:20px;font-weight:700;cursor:pointer;flex:none}
+.cnt input{width:70px;text-align:center;font-variant-numeric:tabular-nums;padding:8px 4px}
+.estado-l{font-size:12px;font-weight:700}
+.estado-l.ok{color:var(--ok)} .estado-l.falta{color:var(--bad)} .estado-l.sobra{color:var(--warn)} .estado-l.pend{color:var(--ink-2)}
+/* panel */
+.chart{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:12px}
+.chart svg{width:100%;height:auto;display:block}
+.chart .ax{fill:var(--ink-2);font-size:10px;font-family:var(--f-ui)}
+.chart .grid{stroke:var(--line);stroke-width:1}
+.chart .b-in{fill:#1d8a4e} .chart .b-out{fill:#c2352b}
+:root[data-theme="dark"] .chart .b-in{fill:#3fbf78} :root[data-theme="dark"] .chart .b-out{fill:#ef6a5f}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .chart .b-in{fill:#3fbf78} :root:not([data-theme="light"]) .chart .b-out{fill:#ef6a5f}}
+.hbar{display:grid;grid-template-columns:110px 1fr 40px;gap:8px;align-items:center;font-size:13px;padding:4px 0}
+.hbar .tr{height:12px;background:var(--chip);border-radius:6px;overflow:hidden}
+.hbar .tr span{display:block;height:100%;background:var(--steel-2)}
+.hbar b{text-align:right;font-variant-numeric:tabular-nums}
+details.guion{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:10px 12px}
+details.guion summary{cursor:pointer;font-weight:700}
+details.guion ol{margin:8px 0 0;padding-left:20px;display:flex;flex-direction:column;gap:6px;font-size:14px}
+@media (prefers-reduced-motion:no-preference){.sheet{animation:up .18s ease-out}@keyframes up{from{transform:translateY(30px);opacity:.6}}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="logo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#1b1400" stroke-width="2.4"><path d="M3 9l9-5 9 5v11H3z"/><path d="M8 20v-6h8v6"/></svg></div>
+    <div><h1>AlmacénQR</h1><div class="sub">Gestión de almacén · demo</div></div>
+    <button class="user" id="btn-user" aria-label="Cambiar operario">👷 <span id="user-name">Operario 1</span></button>
+  </header>
+  <main id="view"></main>
+  <nav class="bottom" aria-label="Secciones">
+    <div class="in">
+      <button data-go="inicio" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-7 9 7v9H3z"/></svg>Inicio</button>
+      <button data-go="stock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="8" height="7"/><rect x="13" y="4" width="8" height="7"/><rect x="3" y="13" width="8" height="7"/><rect x="13" y="13" width="8" height="7"/></svg>Stock</button>
+      <button data-go="escanear" class="scan" aria-label="Escanear QR"><span class="ring"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 8V4h4M20 8V4h-4M4 16v4h4M20 16v4h-4"/><path d="M7 12h10"/></svg></span>Escanear</button>
+      <button data-go="tareas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9zM8.5 12l2 2 4-4M8.5 17h7"/></svg>Tareas<span class="badge" id="badge-tareas" hidden></span></button>
+      <button data-go="panel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Panel</button>
+    </div>
+  </nav>
+</div>
+<input type="file" id="foto" accept="image/*" capture="environment" hidden>
+
+<script>
+(() => {
+'use strict';
+const KEY = 'almacenqr-demo-v2';
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt = n => Number(n).toLocaleString('es-ES');
+const dia = d => new Date(d).toISOString().slice(0,10);
+const hoy = () => dia(Date.now());
+
+/* ---------- Datos de ejemplo ---------- */
+const PASILLOS = ['A','B','C'], ESTANT = 6, NIVELES = 3;
+const ZONAS = [{c:'MUELLE-ENT', n:'Muelle de entrada', d:'Recepción de camiones'}, {c:'EXPED', n:'Expedición', d:'Pedidos preparados para salir'}];
+const OPERARIOS = ['Operario 1','Operario 2','Operario 3','Jefe de almacén'];
+function todasUbic(){ const u = ZONAS.map(z=>z.c); PASILLOS.forEach(p=>{ for(let e=1;e<=ESTANT;e++) for(let n=1;n<=NIVELES;n++) u.push(`${p}-${String(e).padStart(2,'0')}-${n}`); }); return u; }
+const PRODUCTOS = [
+  ['ELV-2C-4T','Elevador 2 columnas 4.000 kg','Elevadores',2,'ud'],
+  ['ELV-4C-5T','Elevador 4 columnas 5.000 kg','Elevadores',1,'ud'],
+  ['ELV-TIJ-3T','Elevador de tijera 3.000 kg','Elevadores',1,'ud'],
+  ['DSM-AUT-24','Desmontadora automática 24"','Neumáticos',2,'ud'],
+  ['EQL-DIG-01','Equilibradora digital','Neumáticos',2,'ud'],
+  ['ALN-3D-PRO','Alineador 3D','Diagnosis',1,'ud'],
+  ['CMP-TOR-10','Compresor de tornillo 10 CV','Aire',1,'ud'],
+  ['GAT-HID-3T','Gato hidráulico 3 t','Utillaje',4,'ud'],
+  ['CAR-HER-7C','Carro de herramientas 7 cajones','Utillaje',3,'ud'],
+  ['BAN-TRB-2M','Banco de trabajo 2 m','Mobiliario',2,'ud'],
+  ['KIT-ANC-M16','Kit anclaje químico M16','Repuestos',20,'kit'],
+  ['CIL-HID-EL','Cilindro hidráulico elevador','Repuestos',4,'ud'],
+  ['CAB-ACE-6','Cable de acero 6 mm (rollo 50 m)','Repuestos',3,'rollo'],
+  ['ACE-HID-20','Aceite hidráulico 20 L','Consumibles',6,'bidón'],
+];
+function seed(){
+  const S = { v:2, user:'Operario 1', productos: PRODUCTOS.map(([sku,nombre,cat,min,ud])=>({sku,nombre,cat,min,ud})), ubic: todasUbic(), stock:{}, movs:[], pedidos:[], recepciones:[], inventarios:[] };
+  const put = (sku,u,q) => { S.stock[sku+'|'+u] = (S.stock[sku+'|'+u]||0) + q; };
+  [['ELV-2C-4T','A-01-1',4],['ELV-2C-4T','A-01-2',2],['ELV-4C-5T','A-02-1',1],['ELV-TIJ-3T','A-03-1',3],
+   ['DSM-AUT-24','B-01-1',5],['EQL-DIG-01','B-01-2',4],['EQL-DIG-01','B-02-2',1],['ALN-3D-PRO','B-03-1',2],['CMP-TOR-10','A-04-1',2],
+   ['GAT-HID-3T','C-01-1',9],['CAR-HER-7C','C-02-1',6],['BAN-TRB-2M','C-03-1',1],['KIT-ANC-M16','C-04-3',64],['KIT-ANC-M16','C-04-2',30],
+   ['CIL-HID-EL','C-05-2',3],['CAB-ACE-6','C-05-3',7],['ACE-HID-20','C-06-1',14],['DSM-AUT-24','MUELLE-ENT',2]].forEach(([s,u,q])=>put(s,u,q));
+  // Historial de 7 días (para el panel)
+  const ahora = Date.now(), h = 3600e3; let k = 0;
+  const rnd = (() => { let x = 7; return () => (x = (x*9301+49297)%233280)/233280; })();
+  const skus = PRODUCTOS.map(p=>p[0]);
+  for(let d=7; d>=1; d--){
+    const n = 3 + Math.floor(rnd()*5);
+    for(let i=0;i<n;i++){
+      const sku = skus[Math.floor(rnd()*skus.length)], r = rnd();
+      const tipo = r<0.4?'entrada':r<0.85?'salida':'mover';
+      const qty = sku.startsWith('KIT')||sku.startsWith('ACE') ? 2+Math.floor(rnd()*12) : 1+Math.floor(rnd()*2);
+      const u = Object.keys(S.stock).find(x=>x.startsWith(sku+'|'))?.split('|')[1] || 'C-06-2';
+      S.movs.push({id:'M'+(1000+k++), t:new Date(ahora - d*24*h + (8+i*1.3)*h - 12*h).toISOString(), tipo, sku, qty,
+        de: tipo==='entrada'?null:u, a: tipo==='salida'?null:(tipo==='entrada'?u:'C-06-3'),
+        ref: tipo==='entrada'?'ALB-2026-04'+(10+k):tipo==='salida'?'PED-11'+(60+k):'Reubicación', user: OPERARIOS[Math.floor(rnd()*3)]});
+    }
+  }
+  S.movs.push({id:'M'+(1000+k++), t:new Date(ahora-2*h).toISOString(), tipo:'entrada', sku:'DSM-AUT-24', qty:2, de:null, a:'MUELLE-ENT', ref:'ALB-2026-0429', user:'Operario 2'});
+  S.movs.reverse();
+  S.pedidos = [
+    {id:'PED-1201', cliente:'Taller de ejemplo Martín', poblacion:'Écija', fecha:new Date(ahora-5*h).toISOString(), estado:'pendiente', lineas:[{sku:'ELV-2C-4T',qty:1,hecho:0},{sku:'KIT-ANC-M16',qty:8,hecho:0},{sku:'ACE-HID-20',qty:2,hecho:0}]},
+    {id:'PED-1202', cliente:'Neumáticos de ejemplo Sur', poblacion:'Dos Hermanas', fecha:new Date(ahora-3*h).toISOString(), estado:'pendiente', lineas:[{sku:'DSM-AUT-24',qty:1,hecho:0},{sku:'EQL-DIG-01',qty:1,hecho:0},{sku:'GAT-HID-3T',qty:2,hecho:0}]},
+    {id:'PED-1203', cliente:'Autos de ejemplo Ronda', poblacion:'Ronda', fecha:new Date(ahora-1*h).toISOString(), estado:'pendiente', lineas:[{sku:'CAR-HER-7C',qty:2,hecho:0},{sku:'CAB-ACE-6',qty:1,hecho:0},{sku:'KIT-ANC-M16',qty:4,hecho:0},{sku:'CIL-HID-EL',qty:1,hecho:0}]},
+  ];
+  S.recepciones = [
+    {id:'ALB-2026-0431', proveedor:'Proveedor de elevadores (ejemplo)', fecha:new Date(ahora-1*h).toISOString(), estado:'pendiente', lineas:[{sku:'ELV-TIJ-3T',esperado:2,recibido:0},{sku:'CIL-HID-EL',esperado:6,recibido:0},{sku:'KIT-ANC-M16',esperado:50,recibido:0}]},
+    {id:'ALB-2026-0432', proveedor:'Distribuciones de ejemplo Norte', fecha:new Date(ahora-0.5*h).toISOString(), estado:'pendiente', lineas:[{sku:'ACE-HID-20',esperado:10,recibido:0},{sku:'BAN-TRB-2M',esperado:2,recibido:0}]},
+  ];
+  return S;
+}
+let S;
+try { S = JSON.parse(localStorage.getItem(KEY)) || seed(); if(!S || S.v!==2) S = seed(); } catch(e){ S = seed(); }
+function guardar(){ try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e){} }
+
+const prod = sku => S.productos.find(p=>p.sku===sku);
+const pnom = sku => (prod(sku)||{nombre:sku}).nombre;
+const stockDe = sku => Object.entries(S.stock).filter(([k,q])=>k.startsWith(sku+'|') && q>0).map(([k,q])=>({u:k.split('|')[1], q})).sort((a,b)=>b.q-a.q);
+const totalDe = sku => stockDe(sku).reduce((s,x)=>s+x.q,0);
+const enUbic = u => Object.entries(S.stock).filter(([k,q])=>k.endsWith('|'+u) && q>0).map(([k,q])=>({sku:k.split('|')[0], q}));
+const nombreUbic = u => { const z = ZONAS.find(z=>z.c===u); if(z) return z.n; const [p,e,n]=u.split('-'); return `Pasillo ${p} · Estantería ${e} · Nivel ${n}`; };
+const esZona = u => ZONAS.some(z=>z.c===u);
+function mover(sku, de, a, qty){
+  if(de){ const k=sku+'|'+de; S.stock[k]=(S.stock[k]||0)-qty; if(S.stock[k]<=0) delete S.stock[k]; }
+  if(a){ const k=sku+'|'+a; S.stock[k]=(S.stock[k]||0)+qty; }
+}
+function registrar(tipo, sku, qty, de, a, ref){ S.movs.unshift({id:'M'+Date.now()+Math.floor(Math.random()*1000), t:new Date().toISOString(), tipo, sku, qty, de:de||null, a:a||null, ref:ref||'', user:S.user}); }
+
+/* ---------- QR ---------- */
+const qrTexto = (tipo,val) => `AQR:${tipo}:${val}`;
+function qrSvg(text, cell=4){ const q = qrcode(0,'M'); q.addData(text); q.make(); return q.createSvgTag({cellSize:cell, margin:2, scalable:true}); }
+function interpretar(txt){
+  txt = String(txt||'').trim();
+  const m = txt.match(/^AQR:([PU]):(.+)$/);
+  if(m) return m[1]==='P' ? (prod(m[2]) ? {tipo:'P', val:m[2]} : null) : (S.ubic.includes(m[2]) ? {tipo:'U', val:m[2]} : null);
+  const up = txt.toUpperCase();
+  if(prod(up)) return {tipo:'P', val:up};
+  if(S.ubic.includes(up)) return {tipo:'U', val:up};
+  return null;
+}
+
+/* ---------- UI helpers ---------- */
+let toastT;
+function toast(msg, mal){ let t=$('.toast'); if(!t){ t=document.createElement('div'); t.className='toast'; t.setAttribute('role','status'); document.body.appendChild(t);} t.textContent=msg; t.classList.toggle('bad', !!mal); t.hidden=false; clearTimeout(toastT); toastT=setTimeout(()=>t.hidden=true, mal?3400:2600); }
+function vibrar(ms){ try{ navigator.vibrate && navigator.vibrate(ms); }catch(e){} }
+function sheet(titulo, html, onMount){
+  cerrarSheet();
+  const bg = document.createElement('div'); bg.className='sheet-bg';
+  bg.innerHTML = `<div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(titulo)}"><div class="sheet-h"><h3>${esc(titulo)}</h3><button class="x" aria-label="Cerrar">×</button></div>${html}</div>`;
+  bg.addEventListener('click', e=>{ if(e.target===bg || e.target.closest('.x')) { cerrarSheet(); render(); } });
+  document.body.appendChild(bg);
+  if(onMount) onMount(bg.querySelector('.sheet'));
+  return bg;
+}
+function cerrarSheet(){ pararCamara(); document.querySelectorAll('.sheet-bg').forEach(b=>b.remove()); }
+const ICON_SCAN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 8V4h4M20 8V4h-4M4 16v4h4M20 16v4h-4"/><path d="M7 12h10"/></svg>';
+const tipoTxt = {entrada:'Entrada', salida:'Salida', mover:'Movimiento', ajuste:'Ajuste'};
+const tipoCls = {entrada:'in', salida:'out', mover:'mv', ajuste:'adj'};
+function hora(iso){ const d=new Date(iso); return (dia(d)===hoy()?'Hoy ':d.toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit'})+' ')+d.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}); }
+function movRow(m){
+  const ruta = m.de && m.a ? `${m.de} → ${m.a}` : m.a ? `→ ${m.a}` : `${m.de} →`;
+  const signo = m.tipo==='salida' || (m.tipo==='ajuste' && m.de) ? '−' : m.tipo==='mover' ? '' : '+';
+  return `<button class="row" data-prod="${esc(m.sku)}"><span class="pill ${tipoCls[m.tipo]}">${tipoTxt[m.tipo]}</span><span class="main"><span class="t">${esc(pnom(m.sku))}</span><span class="s"><span class="code">${esc(ruta)}</span> · ${esc(m.ref||'')} · ${esc(m.user)} · ${hora(m.t)}</span></span><span class="n">${signo}${fmt(m.qty)}</span></button>`;
+}
+const ordenUbic = (a,b) => a.localeCompare(b, 'es', {numeric:true});
+
+/* ---------- Navegación ---------- */
+let vista='inicio', stockModo='lista', filtroStock='', catSel='Todas', resaltar=null, filtroMov='todos', tareaTab='pedidos', etqTipo='P';
+function ir(v){ if(v==='escanear'){ escanear({modo:'global'}); return; } vista=v; if(v!=='stock') resaltar=null; document.querySelectorAll('nav.bottom button').forEach(b=>{ if(b.dataset.go===v) b.setAttribute('aria-current','page'); else b.removeAttribute('aria-current'); }); render(); window.scrollTo(0,0); }
+function render(){
+  $('#user-name').textContent=S.user;
+  const pend = S.pedidos.filter(p=>p.estado==='pendiente'||p.estado==='en curso').length + S.recepciones.filter(r=>r.estado==='pendiente').length;
+  const bd=$('#badge-tareas'); bd.textContent=pend; bd.hidden=!pend;
+  const V={inicio,stock,tareas,panel,etiquetas}[vista]||inicio; $('#view').innerHTML=V(); montar();
+}
+
+/* ---------- Inicio ---------- */
+function inicio(){
+  const uds = S.productos.reduce((s,p)=>s+totalDe(p.sku),0);
+  const ocup = new Set(Object.entries(S.stock).filter(([k,q])=>q>0).map(([k])=>k.split('|')[1]).filter(u=>!esZona(u))).size;
+  const huecos = S.ubic.filter(u=>!esZona(u)).length;
+  const movHoy = S.movs.filter(m=>dia(m.t)===hoy()).length;
+  const bajos = S.productos.filter(p=>totalDe(p.sku)<=p.min);
+  const muelle = enUbic('MUELLE-ENT');
+  const pedP = S.pedidos.filter(p=>p.estado==='pendiente'||p.estado==='en curso').length;
+  const pedE = S.pedidos.filter(p=>p.estado==='preparado').length;
+  const recP = S.recepciones.filter(r=>r.estado==='pendiente').length;
+  return `
+  <p class="demo-band">Demo con datos de ejemplo. Lo que hagas se guarda en este móvil; «Reiniciar demo» (en Panel) lo deja como al principio.</p>
+  <div class="tareas">
+    <button class="tarea ${pedP?'hot':''}" data-tarea="pedidos"><b>${pedP}</b><span>pedidos por preparar</span></button>
+    <button class="tarea ${recP?'hot':''}" data-tarea="recepciones"><b>${recP}</b><span>camiones por recibir</span></button>
+    <button class="tarea ${pedE?'hot':''}" data-tarea="pedidos"><b>${pedE}</b><span>listos para expedir</span></button>
+  </div>
+  <div class="kpis">
+    <div class="kpi"><b>${fmt(uds)}</b><span>unidades en stock</span></div>
+    <div class="kpi"><b>${ocup}<small style="font-size:14px;color:var(--ink-2)"> / ${huecos}</small></b><span>huecos ocupados</span></div>
+  </div>
+  <div class="acciones">
+    <button class="acc-btn in" data-op="entrada">Entrada<small>Suelta</small></button>
+    <button class="acc-btn out" data-op="salida">Salida<small>Suelta</small></button>
+    <button class="acc-btn mv" data-op="mover">Mover<small>Cambiar de sitio</small></button>
+  </div>
+  ${muelle.length?`<h2>En el muelle, pendiente de ubicar</h2><div class="list">${muelle.map(x=>`<button class="row" data-ubicar="${esc(x.sku)}"><span class="pill low">Muelle</span><span class="main"><span class="t">${esc(pnom(x.sku))}</span><span class="s">Toca para llevarlo a su estantería</span></span><span class="n">${fmt(x.q)}</span></button>`).join('')}</div>`:''}
+  <h2>Stock bajo mínimo</h2>
+  <div class="list">${bajos.length? bajos.map(p=>`<button class="row" data-prod="${esc(p.sku)}"><span class="pill low">Mín. ${p.min}</span><span class="main"><span class="t">${esc(p.nombre)}</span><span class="s"><span class="code">${esc(p.sku)}</span></span></span><span class="n">${fmt(totalDe(p.sku))}</span></button>`).join('') : '<div class="empty">Todo por encima del mínimo.</div>'}</div>
+  <h2>Últimos movimientos · ${movHoy} hoy</h2>
+  <div class="list">${S.movs.slice(0,4).map(movRow).join('') || '<div class="empty">Sin movimientos.</div>'}</div>`;
+}
+
+/* ---------- Stock (lista + mapa) ---------- */
+function stock(){
+  const seg = `<div class="seg two" role="group" aria-label="Vista"><button data-smodo="lista" aria-pressed="${stockModo==='lista'}">Por producto</button><button data-smodo="mapa" aria-pressed="${stockModo==='mapa'}">Mapa del almacén</button></div>`;
+  if(stockModo==='mapa') return seg + mapa();
+  const cats = ['Todas', ...new Set(S.productos.map(p=>p.cat))];
+  const f = filtroStock.toLowerCase();
+  const lista = S.productos.filter(p=>(catSel==='Todas'||p.cat===catSel) && (!f || p.nombre.toLowerCase().includes(f) || p.sku.toLowerCase().includes(f)));
+  return seg + `
+  <div class="with-scan"><input type="search" id="q-stock" placeholder="Buscar por nombre o referencia" value="${esc(filtroStock)}" aria-label="Buscar producto"><button class="scan-mini" data-scanglobal="1" aria-label="Escanear">${ICON_SCAN}</button></div>
+  <div class="tabs" role="group" aria-label="Categorías">${cats.map(c=>`<button aria-pressed="${c===catSel}" data-cat="${esc(c)}">${esc(c)}</button>`).join('')}</div>
+  <div class="list">${lista.map(p=>{ const t=totalDe(p.sku), us=stockDe(p.sku); return `<button class="row" data-prod="${esc(p.sku)}"><span class="main"><span class="t">${esc(p.nombre)}</span><span class="s"><span class="code">${esc(p.sku)}</span> · ${us.length? us.slice(0,3).map(x=>esc(x.u)).join(', ')+(us.length>3?'…':'') : 'sin ubicación'}</span></span>${t<=p.min?'<span class="pill low">Bajo</span>':''}<span class="n">${fmt(t)}<br><span class="s" style="font-weight:400">${esc(p.ud)}</span></span></button>`; }).join('') || '<div class="empty">No hay productos con ese filtro.</div>'}</div>
+  <button class="btn acc full" data-nuevoprod="1">+ Producto nuevo (alta, etiqueta y entrada)</button>
+  <button class="btn sec" data-go2="etiquetas">Etiquetas QR de productos y estanterías</button>`;
+}
+function mapa(){
+  const lleno = u => enUbic(u).length>0;
+  return `
+  <div class="legend"><span><i style="background:var(--bg)"></i>Libre</span><span><i style="background:color-mix(in srgb,var(--steel-2) 30%,var(--panel))"></i>Con mercancía</span><span><i style="outline:2px solid var(--acc)"></i>Buscado</span></div>
+  <div class="zones">${ZONAS.map(z=>`<button class="zone" data-ubic="${z.c}"><b>${esc(z.n)}</b><span class="hint">${enUbic(z.c).reduce((s,x)=>s+x.q,0)} uds · <span class="code">${z.c}</span></span></button>`).join('')}</div>
+  <div class="map">${PASILLOS.map(p=>{ const us=S.ubic.filter(u=>u.startsWith(p+'-')); const oc=us.filter(lleno).length; return `<div class="aisle"><h3>Pasillo ${p}<span>${oc} de ${us.length} ocupados</span></h3><div class="racks">${Array.from({length:ESTANT},(_,i)=>{ const e=String(i+1).padStart(2,'0'); return `<div class="rack">${Array.from({length:NIVELES},(_,j)=>{ const u=`${p}-${e}-${j+1}`; return `<button class="slot ${lleno(u)?'full':''} ${resaltar&&resaltar.includes(u)?'hl':''}" data-ubic="${u}" aria-label="${esc(nombreUbic(u))}">N${j+1}</button>`; }).join('')}<div class="rack-n">${e}</div></div>`; }).join('')}</div></div>`; }).join('')}</div>
+  <p class="hint">Cada columna es una estantería y cada casilla un nivel (N1 abajo). Toca una casilla para ver qué hay.</p>`;
+}
+
+/* ---------- Tareas ---------- */
+function tareas(){
+  const tabs = `<div class="seg" role="group" aria-label="Tipo de tarea"><button data-ttab="pedidos" aria-pressed="${tareaTab==='pedidos'}">Pedidos</button><button data-ttab="recepciones" aria-pressed="${tareaTab==='recepciones'}">Recepciones</button><button data-ttab="inventario" aria-pressed="${tareaTab==='inventario'}">Inventario</button></div>`;
+  if(tareaTab==='pedidos'){
+    const orden = {'en curso':0, pendiente:1, preparado:2, expedido:3};
+    const ps = [...S.pedidos].sort((a,b)=>orden[a.estado]-orden[b.estado] || ordenUbic(a.id,b.id));
+    return tabs + `<p class="hint">El operario abre un pedido y la app le lleva por el almacén en el orden más corto: pasillo, estantería y nivel.</p>
+    <div class="list">${ps.map(p=>{ const tot=p.lineas.reduce((s,l)=>s+l.qty,0), h=p.lineas.reduce((s,l)=>s+Math.min(l.hecho,l.qty),0); const pill = p.estado==='expedido'?'<span class="pill done">Expedido</span>':p.estado==='preparado'?'<span class="pill in">Preparado</span>':p.estado==='en curso'?'<span class="pill low">En curso</span>':'<span class="pill mv">Pendiente</span>'; return `<button class="row" data-pedido="${esc(p.id)}"><span class="main"><span class="t">${esc(p.id)} · ${esc(p.cliente)}</span><span class="s">${esc(p.poblacion)} · ${p.lineas.length} líneas · ${h}/${tot} uds · ${hora(p.fecha)}</span></span>${pill}</button>`; }).join('')}</div>
+    <button class="btn sec" id="btn-nuevo-pedido">+ Simular pedido nuevo de la web</button>`;
+  }
+  if(tareaTab==='recepciones'){
+    return tabs + `<p class="hint">Llega un camión: se escanea cada bulto contra el albarán y la app avisa de lo que falta o sobra.</p>
+    <div class="list">${S.recepciones.map(r=>{ const esp=r.lineas.reduce((s,l)=>s+l.esperado,0), rec=r.lineas.reduce((s,l)=>s+l.recibido,0); return `<button class="row" data-recep="${esc(r.id)}"><span class="main"><span class="t">${esc(r.id)} · ${esc(r.proveedor)}</span><span class="s">${r.lineas.length} líneas · ${rec}/${esp} uds · ${hora(r.fecha)}${r.incidencia?' · '+esc(r.incidencia):''}</span></span>${r.estado==='recibido'?'<span class="pill done">Recibido</span>':'<span class="pill mv">Pendiente</span>'}</button>`; }).join('')}</div>`;
+  }
+  return tabs + `<p class="hint">Recuento por hueco: se escanea la estantería, se cuenta lo que hay y la app lo compara con el sistema.</p>
+    <button class="btn acc full" id="btn-inv">Empezar recuento de un hueco</button>
+    <h2>Últimos recuentos</h2>
+    <div class="list">${S.inventarios.slice(0,10).map(i=>`<button class="row" data-ubic="${esc(i.ubic)}"><span class="pill ${i.difs.length?'adj':'in'}">${i.difs.length? i.difs.length+' dif.' : 'Cuadra'}</span><span class="main"><span class="t"><span class="code">${esc(i.ubic)}</span></span><span class="s">${esc(i.user)} · ${hora(i.t)}${i.difs.length?' · '+i.difs.map(d=>esc(d.sku)+' '+d.sistema+'→'+d.contado).join(', '):''}</span></span></button>`).join('') || '<div class="empty">Todavía no se ha hecho ningún recuento.</div>'}</div>`;
+}
+
+/* --- Preparación de pedidos (picking) --- */
+let pick = null; // {id, paso:'ubic'|'prod'|'qty', tarea}
+function tareasPicking(p){
+  const t = [];
+  p.lineas.forEach(l=>{
+    let falta = l.qty - l.hecho; if(falta<=0) return;
+    for(const s of stockDe(l.sku).filter(x=>!esZona(x.u)).sort((a,b)=>ordenUbic(a.u,b.u))){ if(falta<=0) break; const q=Math.min(falta,s.q); t.push({sku:l.sku, u:s.u, qty:q}); falta-=q; }
+    if(falta>0) t.push({sku:l.sku, u:null, qty:falta});
+  });
+  return t.sort((a,b)=> a.u&&b.u ? ordenUbic(a.u,b.u) : a.u ? -1 : 1);
+}
+function abrirPedido(id){
+  const p = S.pedidos.find(x=>x.id===id); if(!p) return;
+  if(!pick || pick.id!==id) pick = {id, paso:'ubic'};
+  const tot=p.lineas.reduce((s,l)=>s+l.qty,0), h=p.lineas.reduce((s,l)=>s+Math.min(l.hecho,l.qty),0);
+  const barra = `<div class="barra" aria-label="Progreso"><span style="width:${tot?Math.round(h/tot*100):0}%"></span></div><p class="hint">${h} de ${tot} unidades preparadas · ${esc(p.cliente)} (${esc(p.poblacion)})</p>`;
+  const lineas = `<div class="list">${p.lineas.map(l=>`<div class="row static"><span class="main"><span class="t">${esc(pnom(l.sku))}</span><span class="s"><span class="code">${esc(l.sku)}</span></span></span><span class="n">${Math.min(l.hecho,l.qty)}/${l.qty}</span>${l.hecho>=l.qty?'<span class="pill done">✓</span>':''}</div>`).join('')}</div>`;
+  if(p.estado==='expedido'){ pick=null; return sheet(p.id, barra + `<p class="hint ok">Pedido expedido. Ha salido del almacén.</p>` + lineas); }
+  if(p.estado==='preparado'){
+    pick=null;
+    return sheet(p.id, barra + `<div class="paso"><div class="ir">Pedido completo</div><div class="prod">Todo está en la zona de Expedición</div><p class="hint">Al cargar el camión se registra la salida del almacén.</p><button class="btn badb full" id="btn-expedir">Registrar salida (expedir)</button></div>` + lineas, el=>{
+      el.querySelector('#btn-expedir').onclick=()=>{ p.lineas.forEach(l=>{ const q=Math.min(S.stock[l.sku+'|EXPED']||0, l.qty); if(q>0){ mover(l.sku,'EXPED',null,q); registrar('salida',l.sku,q,'EXPED',null,p.id); } }); p.estado='expedido'; guardar(); cerrarSheet(); render(); toast(`${p.id} expedido`); };
+    });
+  }
+  const ts = tareasPicking(p);
+  const t = ts[0];
+  if(!t){ p.estado='preparado'; guardar(); return abrirPedido(id); }
+  pick.tarea = t;
+  const num = p.lineas.length - p.lineas.filter(l=>l.hecho<l.qty).length + 1;
+  if(!t.u){
+    return sheet(p.id, barra + `<div class="paso"><div class="ir">Sin stock</div><div class="prod">${esc(pnom(t.sku))}</div><p class="hint bad">No queda stock de este producto para ${t.qty} ud. Avisa al jefe de almacén.</p><button class="btn sec full" id="btn-saltar">Marcar como incidencia y seguir</button></div>` + lineas, el=>{
+      el.querySelector('#btn-saltar').onclick=()=>{ const l=p.lineas.find(x=>x.sku===t.sku); l.qty=l.hecho; p.incidencia='Falta stock de '+t.sku; guardar(); abrirPedido(id); };
+    });
+  }
+  const okU = pick.paso!=='ubic', okP = pick.paso==='qty';
+  sheet(`${p.id} · preparar`, barra + `
+    <div class="paso">
+      <div class="ir">Línea ${Math.min(num,p.lineas.length)} de ${p.lineas.length} · ve a</div>
+      <div class="ubi">${esc(t.u)}</div><div class="ubi-n">${esc(nombreUbic(t.u))}</div>
+      <div class="prod">Coge ${t.qty} × ${esc(pnom(t.sku))}</div><div><span class="code">${esc(t.sku)}</span></div>
+      <div class="check ${okU?'ok':''}"><i>${okU?'✓':'1'}</i>Escanea la etiqueta de la estantería</div>
+      <div class="check ${okP?'ok':''}"><i>${okP?'✓':'2'}</i>Escanea el producto</div>
+      ${okP?`<label class="f" for="pk-qty">Cantidad cogida<div class="cnt"><button data-d="-1" aria-label="Menos">−</button><input id="pk-qty" type="number" inputmode="numeric" min="1" max="${t.qty}" value="${t.qty}"><button data-d="1" aria-label="Más">+</button></div></label>
+        <button class="btn okb full" id="pk-ok">Confirmar y siguiente</button>`
+      : `<button class="btn acc full" id="pk-scan">${ICON_SCAN.replace('<svg','<svg width="20" height="20" style="vertical-align:-4px"')} ${okU?'Escanear producto':'Escanear estantería'}</button>`}
+    </div>` + lineas, el => {
+      const sc = el.querySelector('#pk-scan');
+      if(sc) sc.onclick = () => escanear({modo:'campo', espera: okU?'P':'U', sugerido: okU?qrTexto('P',t.sku):qrTexto('U',t.u), alLeer: r => {
+        if(!okU){ if(r.val!==t.u){ vibrar([80,60,80]); toast(`Estantería equivocada: es ${t.u}`, true); } else { pick.paso='prod'; toast('Estantería correcta'); } }
+        else { if(r.val!==t.sku){ vibrar([80,60,80]); toast(`Producto equivocado: buscas ${t.sku}`, true); } else { pick.paso='qty'; toast('Producto correcto'); } }
+        abrirPedido(id);
+      }});
+      const q = el.querySelector('#pk-qty');
+      el.querySelectorAll('[data-d]').forEach(b=>b.onclick=()=>{ q.value=Math.max(1,Math.min(t.qty,(parseInt(q.value,10)||0)+ +b.dataset.d)); });
+      const ok = el.querySelector('#pk-ok');
+      if(ok) ok.onclick = () => {
+        const n = Math.max(1, Math.min(t.qty, parseInt(q.value,10)||0));
+        mover(t.sku, t.u, 'EXPED', n); registrar('mover', t.sku, n, t.u, 'EXPED', p.id);
+        p.lineas.find(l=>l.sku===t.sku).hecho += n;
+        if(p.estado==='pendiente') p.estado='en curso';
+        if(p.lineas.every(l=>l.hecho>=l.qty)){ p.estado='preparado'; toast(`${p.id} preparado`); } else toast(`${n} × ${t.sku} preparado`);
+        pick.paso='ubic'; guardar(); abrirPedido(id);
+      };
+  });
+}
+function nuevoPedido(){
+  const n = 1201 + S.pedidos.length;
+  const disp = S.productos.filter(p=>stockDe(p.sku).some(x=>!esZona(x.u)));
+  const elegidos = disp.sort(()=>Math.random()-.5).slice(0, 2+Math.floor(Math.random()*2));
+  S.pedidos.unshift({id:'PED-'+n, cliente:['Taller de ejemplo Ruiz','Chapa y pintura de ejemplo','Autoservicio de ejemplo'][n%3], poblacion:['Sevilla','Utrera','Carmona'][n%3], fecha:new Date().toISOString(), estado:'pendiente',
+    lineas: elegidos.map(p=>({sku:p.sku, qty: Math.min(p.sku.startsWith('KIT')?6:1, totalDe(p.sku)), hecho:0}))});
+  guardar(); render(); toast(`Ha entrado el pedido PED-${n}`);
+}
+
+/* --- Recepción de albarán --- */
+function abrirRecepcion(id){
+  const r = S.recepciones.find(x=>x.id===id); if(!r) return;
+  const est = l => l.recibido===0?['pend','Pendiente']:l.recibido<l.esperado?['falta',`Faltan ${l.esperado-l.recibido}`]:l.recibido>l.esperado?['sobra',`Sobran ${l.recibido-l.esperado}`]:['ok','Completo'];
+  const cerrado = r.estado==='recibido';
+  sheet(`${r.id} · ${r.proveedor}`, `
+    ${cerrado?`<p class="hint ok">Recepción cerrada. La mercancía está en el muelle para ubicarla.${r.incidencia?' Incidencia: '+esc(r.incidencia):''}</p>`:`<button class="btn acc full" id="rc-scan">${ICON_SCAN.replace('<svg','<svg width="20" height="20" style="vertical-align:-4px"')} Escanear bulto</button><p class="hint">Cada lectura suma 1. Para cantidades grandes usa + y − o escribe el número.</p>`}
+    <div class="list">${r.lineas.map((l,i)=>{ const [c,t]=est(l); return `<div class="row static"><span class="main"><span class="t">${esc(pnom(l.sku))}</span><span class="s"><span class="code">${esc(l.sku)}</span> · esperado ${l.esperado} · <span class="estado-l ${c}">${t}</span></span></span>${cerrado?`<span class="n">${l.recibido}</span>`:`<div class="cnt"><button data-i="${i}" data-d="-1" aria-label="Menos">−</button><input data-i="${i}" type="number" inputmode="numeric" min="0" value="${l.recibido}" aria-label="Recibido ${esc(l.sku)}"><button data-i="${i}" data-d="1" aria-label="Más">+</button></div>`}</div>`; }).join('')}</div>
+    ${cerrado?'':`<button class="btn okb full" id="rc-ok">Cerrar recepción y dejar en el muelle</button>`}`, el => {
+      if(cerrado) return;
+      el.querySelector('#rc-scan').onclick = () => escanear({modo:'campo', espera:'P', sugerido: (()=>{ const l=r.lineas.find(x=>x.recibido<x.esperado)||r.lineas[0]; return qrTexto('P',l.sku); })(), alLeer: res => {
+        const l = r.lineas.find(x=>x.sku===res.val);
+        if(!l){ vibrar([80,60,80]); toast(`${res.val} no viene en este albarán`, true); }
+        else { l.recibido++; guardar(); toast(`${res.val}: ${l.recibido}/${l.esperado}`); }
+        abrirRecepcion(id);
+      }});
+      el.querySelectorAll('button[data-d]').forEach(b=>b.onclick=()=>{ const l=r.lineas[+b.dataset.i]; l.recibido=Math.max(0,l.recibido+ +b.dataset.d); guardar(); abrirRecepcion(id); });
+      el.querySelectorAll('input[data-i]').forEach(inp=>inp.onchange=()=>{ r.lineas[+inp.dataset.i].recibido=Math.max(0,parseInt(inp.value,10)||0); guardar(); abrirRecepcion(id); });
+      el.querySelector('#rc-ok').onclick = () => {
+        const difs = r.lineas.filter(l=>l.recibido!==l.esperado);
+        r.lineas.forEach(l=>{ if(l.recibido>0){ mover(l.sku,null,'MUELLE-ENT',l.recibido); registrar('entrada',l.sku,l.recibido,null,'MUELLE-ENT',r.id); } });
+        r.estado='recibido'; r.incidencia = difs.length ? difs.map(l=>`${l.sku} ${l.recibido}/${l.esperado}`).join(', ') : '';
+        guardar(); cerrarSheet(); render();
+        toast(difs.length ? `Recepción cerrada con ${difs.length} diferencia(s)` : 'Recepción completa, mercancía en el muelle');
+      };
+  });
+}
+
+/* --- Inventario por hueco --- */
+let inv = null; // {ubic, cont:{sku:n}}
+function empezarInventario(){ escanear({modo:'campo', espera:'U', sugerido: qrTexto('U','C-04-3'), alLeer: r => { inv = {ubic:r.val, cont:{}}; enUbic(r.val).forEach(x=>inv.cont[x.sku]=''); abrirInventario(); }}); }
+function abrirInventario(){
+  if(!inv) return;
+  const sis = Object.fromEntries(enUbic(inv.ubic).map(x=>[x.sku,x.q]));
+  const skus = [...new Set([...Object.keys(sis), ...Object.keys(inv.cont)])];
+  sheet(`Recuento · ${inv.ubic}`, `
+    <p class="hint">${esc(nombreUbic(inv.ubic))}. Cuenta lo que hay físicamente y escríbelo; el sistema no te enseña su cantidad hasta que compares, para no condicionar el recuento.</p>
+    <div class="list">${skus.length? skus.map(s=>`<div class="row static"><span class="main"><span class="t">${esc(pnom(s))}</span><span class="s"><span class="code">${esc(s)}</span>${sis[s]===undefined?' · <b>no estaba en este hueco</b>':''}</span></span><input data-sku="${esc(s)}" type="number" inputmode="numeric" min="0" placeholder="Contado" value="${inv.cont[s]??''}" style="width:96px;text-align:center" aria-label="Contado ${esc(s)}"></div>`).join('') : '<div class="empty">El sistema dice que este hueco está vacío.</div>'}</div>
+    <button class="btn sec" id="inv-add">+ He encontrado otro producto (escanear)</button>
+    <button class="btn acc full" id="inv-cmp">Comparar con el sistema</button>`, el => {
+      el.querySelectorAll('input[data-sku]').forEach(i=>i.oninput=()=>{ inv.cont[i.dataset.sku]=i.value; });
+      el.querySelector('#inv-add').onclick = () => escanear({modo:'campo', espera:'P', alLeer: r => { if(!(r.val in inv.cont)) inv.cont[r.val]=''; abrirInventario(); }});
+      el.querySelector('#inv-cmp').onclick = () => {
+        if(skus.some(s=>inv.cont[s]===''||inv.cont[s]===undefined)) return toast('Escribe la cantidad contada de cada producto (0 si no hay)', true);
+        const difs = skus.map(s=>({sku:s, sistema:sis[s]||0, contado:Math.max(0,parseInt(inv.cont[s],10)||0)})).filter(d=>d.sistema!==d.contado);
+        sheet(`Resultado · ${inv.ubic}`, `
+          ${difs.length? `<p class="hint bad">${difs.length} diferencia(s) entre lo contado y el sistema.</p>` : '<p class="hint ok">Cuadra. Lo contado coincide con el sistema.</p>'}
+          <div class="list">${skus.map(s=>{ const a=sis[s]||0, b=Math.max(0,parseInt(inv.cont[s],10)||0); return `<div class="row static"><span class="main"><span class="t">${esc(pnom(s))}</span><span class="s">Sistema ${a} · Contado ${b}</span></span><span class="n" style="color:${a===b?'var(--ok)':'var(--bad)'}">${b-a>0?'+':''}${b-a}</span></div>`; }).join('')}</div>
+          <button class="btn ${difs.length?'acc':'okb'} full" id="inv-ok">${difs.length?'Ajustar el stock a lo contado':'Guardar recuento'}</button>
+          <button class="btn sec full" id="inv-back">Volver a contar</button>`, el2 => {
+            el2.querySelector('#inv-back').onclick = abrirInventario;
+            el2.querySelector('#inv-ok').onclick = () => {
+              difs.forEach(d=>{ const dlt=d.contado-d.sistema; if(dlt>0){ mover(d.sku,null,inv.ubic,dlt); registrar('ajuste',d.sku,dlt,null,inv.ubic,'Inventario'); } else { mover(d.sku,inv.ubic,null,-dlt); registrar('ajuste',d.sku,-dlt,inv.ubic,null,'Inventario'); } });
+              S.inventarios.unshift({t:new Date().toISOString(), ubic:inv.ubic, user:S.user, difs});
+              guardar(); inv=null; cerrarSheet(); tareaTab='inventario'; render();
+              toast(difs.length?`Stock ajustado (${difs.length} referencia/s)`:'Recuento guardado');
+            };
+        });
+      };
+  });
+}
+
+/* ---------- Panel del jefe ---------- */
+function panel(){
+  const dias = Array.from({length:7},(_,i)=>{ const d=new Date(); d.setDate(d.getDate()-6+i); return dia(d); });
+  const ent = dias.map(d=>S.movs.filter(m=>dia(m.t)===d && m.tipo==='entrada').reduce((s,m)=>s+m.qty,0));
+  const sal = dias.map(d=>S.movs.filter(m=>dia(m.t)===d && m.tipo==='salida').reduce((s,m)=>s+m.qty,0));
+  const max = Math.max(4, ...ent, ...sal), paso = Math.ceil(max/4/5)*5 || 1, top = paso*4;
+  const W=320, Hh=150, L=26, B=20, cw=(W-L)/7;
+  const y = v => Hh-B - v/top*(Hh-B-8);
+  const svg = `<svg viewBox="0 0 ${W} ${Hh}" role="img" aria-label="Unidades que entran y salen cada día, últimos 7 días">
+    ${[0,1,2,3,4].map(i=>`<line class="grid" x1="${L}" x2="${W}" y1="${y(i*paso)}" y2="${y(i*paso)}"/><text class="ax" x="${L-4}" y="${y(i*paso)+3}" text-anchor="end">${i*paso}</text>`).join('')}
+    ${dias.map((d,i)=>{ const x=L+i*cw+cw*0.18, bw=cw*0.3; return `<rect class="b-in" x="${x}" y="${y(ent[i])}" width="${bw}" height="${Hh-B-y(ent[i])}" rx="2"><title>${ent[i]} uds entran</title></rect><rect class="b-out" x="${x+bw+2}" y="${y(sal[i])}" width="${bw}" height="${Hh-B-y(sal[i])}" rx="2"><title>${sal[i]} uds salen</title></rect><text class="ax" x="${L+i*cw+cw/2}" y="${Hh-5}" text-anchor="middle">${i===6?'Hoy':new Date(d).toLocaleDateString('es-ES',{weekday:'short'}).slice(0,3)}</text>`; }).join('')}
+  </svg>`;
+  const desde = Date.now()-7*24*3600e3;
+  const prodOp = OPERARIOS.map(o=>({o, n:S.movs.filter(m=>m.user===o && new Date(m.t)>=desde).length})).sort((a,b)=>b.n-a.n);
+  const maxOp = Math.max(1,...prodOp.map(x=>x.n));
+  const ocP = PASILLOS.map(p=>{ const us=S.ubic.filter(u=>u.startsWith(p+'-')); return {p, pct: Math.round(us.filter(u=>enUbic(u).length).length/us.length*100)}; });
+  const servidos = S.pedidos.filter(p=>p.estado==='expedido').length;
+  const l = S.movs.filter(m=>filtroMov==='todos'||m.tipo===filtroMov).slice(0,40);
+  return `
+  <details class="guion"><summary>Guion para enseñar la demo (5 min)</summary><ol>
+    <li><b>Inicio:</b> lo que tiene pendiente el almacén de un vistazo.</li>
+    <li><b>Tareas → Recepciones:</b> abre el albarán ALB-2026-0431, escanea bultos (o pulsa «simular») y cierra con una diferencia para enseñar el aviso.</li>
+    <li><b>Inicio → En el muelle:</b> ubica lo recibido escaneando la estantería destino.</li>
+    <li><b>Tareas → Pedidos:</b> prepara el PED-1201. La app lleva al operario hueco a hueco y avisa si escanea la estantería o el producto equivocado.</li>
+    <li>Con el pedido completo, <b>registra la salida</b>.</li>
+    <li><b>Tareas → Inventario:</b> cuenta el hueco C-04-3 con otra cantidad y ajusta el stock.</li>
+    <li><b>Panel:</b> gráfica, productividad, movimientos y descarga a Excel. Cada acción queda con operario, fecha y hora.</li>
+  </ol></details>
+  <div class="kpis">
+    <div class="kpi"><b>${servidos}</b><span>pedidos expedidos</span></div>
+    <div class="kpi"><b>${S.movs.filter(m=>dia(m.t)===hoy()).length}</b><span>movimientos hoy</span></div>
+  </div>
+  <h2>Entradas y salidas · últimos 7 días</h2>
+  <div class="chart">${svg}<div class="legend" style="margin-top:6px"><span><i style="background:#1d8a4e"></i>Unidades que entran</span><span><i style="background:#c2352b"></i>Unidades que salen</span></div></div>
+  <h2>Ocupación por pasillo</h2>
+  <div class="card" style="gap:2px">${ocP.map(x=>`<div class="hbar"><span>Pasillo ${x.p}</span><div class="tr"><span style="width:${x.pct}%"></span></div><b>${x.pct}%</b></div>`).join('')}</div>
+  <h2>Actividad por operario · 7 días</h2>
+  <div class="card" style="gap:2px">${prodOp.map(x=>`<div class="hbar"><span>${esc(x.o)}</span><div class="tr"><span style="width:${Math.round(x.n/maxOp*100)}%"></span></div><b>${x.n}</b></div>`).join('')}</div>
+  <h2>Descargar a Excel</h2>
+  <div class="btn-row"><button class="btn" id="csv-stock">Stock por ubicación</button><button class="btn" id="csv-movs">Movimientos</button></div>
+  <h2>Movimientos</h2>
+  <div class="tabs" role="group" aria-label="Tipo">${[['todos','Todos'],['entrada','Entradas'],['salida','Salidas'],['mover','Movimientos'],['ajuste','Ajustes']].map(([k,t])=>`<button aria-pressed="${filtroMov===k}" data-fmov="${k}">${t}</button>`).join('')}</div>
+  <div class="list">${l.map(movRow).join('') || '<div class="empty">Sin movimientos de este tipo.</div>'}</div>
+  <button class="btn sec" id="btn-reset">Reiniciar demo</button>`;
+}
+async function descargar(nombre, filas){
+  const csv = '﻿' + filas.map(f=>f.map(v=>{ v=String(v??''); return /[;"\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; }).join(';')).join('\r\n');
+  await guardarArchivo(nombre, new Blob([csv],{type:'text/csv'}), 'Excel listo');
+}
+// Dentro de claude.ai usa la capacidad de descargas; en cualquier otra web, un enlace de descarga normal.
+async function guardarArchivo(nombre, blob, okMsg){
+  let dl = null;
+  try { dl = window.claude && window.claude.use ? await window.claude.use('downloads') : null; } catch(e){}
+  if(dl){ try { await dl.save({filename:nombre, data:blob}); toast(okMsg); } catch(e){ toast('Descarga cancelada'); } return; }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nombre;
+  document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 2000); toast(okMsg);
+}
+
+/* ---------- Etiquetas ---------- */
+function etiquetas(){
+  const items = etqTipo==='P' ? S.productos.map(p=>({c:p.sku, n:p.nombre, txt:qrTexto('P',p.sku)})) : S.ubic.map(u=>({c:u, n:nombreUbic(u), txt:qrTexto('U',u)}));
+  return `<button class="btn sec" data-go2="stock">← Volver al stock</button>
+  <div class="seg two"><button class="mv" aria-pressed="${etqTipo==='P'}" data-etq="P">Productos</button><button class="mv" aria-pressed="${etqTipo==='U'}" data-etq="U">Ubicaciones</button></div>
+  <p class="hint">Las etiquetas que se pegan en cada producto o hueco de estantería. Para probar: abre esta pantalla en un ordenador y escanéala con el móvil.</p>
+  <button class="btn acc full" id="btn-desc-etq">Descargar hoja de etiquetas (PNG)</button>
+  <div class="labels">${items.map(i=>`<div class="label ${etqTipo==='U'?'u':''}">${qrSvg(i.txt)}<div class="lc">${esc(i.c)}</div><div class="ln">${esc(i.n)}</div></div>`).join('')}</div>`;
+}
+async function descargarEtiquetas(){
+  const items = etqTipo==='P' ? S.productos.map(p=>({c:p.sku, n:p.nombre, txt:qrTexto('P',p.sku)})) : S.ubic.map(u=>({c:u, n:nombreUbic(u), txt:qrTexto('U',u)}));
+  await guardarArchivo(etqTipo==='P'?'etiquetas-productos.png':'etiquetas-ubicaciones.png', await hojaPNG(items), 'Hoja de etiquetas lista');
+}
+async function descargarEtiquetaProducto(sku, copias){
+  const p = prod(sku); if(!p) return;
+  copias = Math.max(1, Math.min(60, Math.floor(copias)||1));
+  const items = Array.from({length:copias}, ()=>({c:p.sku, n:p.nombre, txt:qrTexto('P',p.sku)}));
+  await guardarArchivo(`etiqueta-${p.sku}.png`, await hojaPNG(items), copias>1 ? `${copias} etiquetas listas` : 'Etiqueta lista');
+}
+// Dibuja las etiquetas en una hoja PNG de 3 columnas, lista para imprimir y recortar.
+async function hojaPNG(items){
+  const cols=Math.min(3, items.length), cw=400, ch=470, rows=Math.ceil(items.length/cols);
+  const c=document.createElement('canvas'); c.width=cols*cw; c.height=rows*ch; const ctx=c.getContext('2d');
+  ctx.fillStyle='#fff'; ctx.fillRect(0,0,c.width,c.height);
+  items.forEach((it,i)=>{
+    const x=(i%cols)*cw, y=Math.floor(i/cols)*ch;
+    ctx.strokeStyle='#999'; ctx.setLineDash([8,6]); ctx.strokeRect(x+8,y+8,cw-16,ch-16); ctx.setLineDash([]);
+    const q=qrcode(0,'M'); q.addData(it.txt); q.make(); const n=q.getModuleCount(), s=Math.floor(300/(n+4)), off=x+(cw-s*n)/2;
+    ctx.fillStyle='#000'; for(let r=0;r<n;r++) for(let k=0;k<n;k++) if(q.isDark(r,k)) ctx.fillRect(off+k*s, y+30+r*s, s, s);
+    ctx.textAlign='center'; ctx.font='600 30px "IBM Plex Mono", monospace'; ctx.fillText(it.c, x+cw/2, y+30+s*n+44);
+    ctx.font='20px "IBM Plex Sans Condensed", sans-serif'; ctx.fillText(it.n.length>34?it.n.slice(0,33)+'…':it.n, x+cw/2, y+30+s*n+76);
+  });
+  return await new Promise(r=>c.toBlob(r,'image/png'));
+}
+
+/* ---------- Producto nuevo: alta + etiqueta + entrada ---------- */
+function nuevoProducto(pre={}){
+  const cats = [...new Set(S.productos.map(p=>p.cat))];
+  const huecos = S.ubic.filter(u=>!esZona(u)).sort(ordenUbic);
+  const libre = huecos.find(u=>!enUbic(u).length) || 'MUELLE-ENT';
+  const destino = pre.a || libre;
+  const opU = ['MUELLE-ENT', ...huecos].map(u=>`<option value="${u}" ${u===destino?'selected':''}>${u}${esZona(u)?' · '+esc(nombreUbic(u)):(enUbic(u).length?'':' · libre')}</option>`).join('');
+  sheet('Producto nuevo', `
+    <p class="hint">Da de alta una referencia, genera su etiqueta QR y dale entrada en el almacén en un solo paso.</p>
+    <label class="f" for="np-sku">Referencia<input id="np-sku" maxlength="20" autocomplete="off" autocapitalize="characters" placeholder="ELV-2C-5T" value="${esc(pre.sku||'')}"></label>
+    <label class="f" for="np-nom">Nombre<input id="np-nom" maxlength="60" placeholder="Elevador 2 columnas 5.000 kg" value="${esc(pre.nombre||'')}"></label>
+    <label class="f" for="np-cat">Categoría<select id="np-cat">${cats.map(c=>`<option ${c===pre.cat?'selected':''}>${esc(c)}</option>`).join('')}<option value="__otra">Otra…</option></select></label>
+    <label class="f" for="np-cat2" id="np-cat2-l" hidden>Nombre de la categoría nueva<input id="np-cat2" maxlength="30"></label>
+    <label class="f" for="np-ud">Unidad<select id="np-ud">${['ud','caja','kit','rollo','bidón','palé'].map(u=>`<option>${u}</option>`).join('')}</select></label>
+    <label class="f" for="np-min">Stock mínimo (avisa cuando baje de aquí)<input id="np-min" type="number" inputmode="numeric" min="0" value="1"></label>
+    <h2>Entrada inicial</h2>
+    <label class="f" for="np-a">Ubicación<select id="np-a">${opU}</select></label>
+    <label class="f" for="np-qty">Cantidad que entra (0 = solo dar de alta)<input id="np-qty" type="number" inputmode="numeric" min="0" value="${pre.qty??1}"></label>
+    <label class="f" for="np-ref">Albarán del proveedor (opcional)<input id="np-ref" maxlength="40" placeholder="ALB-2026-0440"></label>
+    <p class="hint bad" id="np-err" role="alert"></p>
+    <button class="btn full okb" id="np-ok">Crear producto y etiqueta</button>`, el => {
+    const cat = el.querySelector('#np-cat'), cat2l = el.querySelector('#np-cat2-l');
+    cat.onchange = () => { cat2l.hidden = cat.value!=='__otra'; };
+    const sk = el.querySelector('#np-sku'); sk.oninput = () => { const p=sk.selectionStart; sk.value = sk.value.toUpperCase().replace(/\s+/g,'-'); try{ sk.setSelectionRange(p,p); }catch(_){} };
+    el.querySelector('#np-ok').onclick = () => {
+      const err = el.querySelector('#np-err');
+      const sku = sk.value.trim(), nombre = el.querySelector('#np-nom').value.trim();
+      const categoria = cat.value==='__otra' ? el.querySelector('#np-cat2').value.trim() : cat.value;
+      const min = Math.max(0, parseInt(el.querySelector('#np-min').value,10)||0);
+      const qty = Math.max(0, parseInt(el.querySelector('#np-qty').value,10)||0);
+      const a = el.querySelector('#np-a').value, ref = el.querySelector('#np-ref').value.trim();
+      const fallo = !/^[A-Z0-9][A-Z0-9-]{2,19}$/.test(sku) ? 'La referencia debe tener de 3 a 20 letras, números o guiones.'
+        : prod(sku) ? `Ya existe un producto con la referencia ${sku}.`
+        : S.ubic.includes(sku) ? 'Esa referencia coincide con una ubicación del almacén.'
+        : nombre.length<3 ? 'Escribe el nombre del producto.'
+        : !categoria ? 'Escribe el nombre de la categoría.' : '';
+      if(fallo){ err.textContent = fallo; vibrar([80,60,80]); return; }
+      S.productos.push({sku, nombre, cat:categoria, min, ud:el.querySelector('#np-ud').value, nuevo:true});
+      if(qty>0){ mover(sku, null, a, qty); registrar('entrada', sku, qty, null, a, ref || 'Alta de producto'); }
+      guardar(); vibrar(60); render();
+      etiquetaLista(sku, qty, a);
+    };
+  });
+}
+function etiquetaLista(sku, qty, a){
+  const p = prod(sku); if(!p) return;
+  sheet('Etiqueta lista', `
+    <p class="hint">${qty>0 ? `Entrada registrada: <b>${fmt(qty)} ${esc(p.ud)}</b> en <span class="code">${esc(a)}</span>.` : 'Producto dado de alta, todavía sin stock.'} Imprime la etiqueta y pégala en el producto o en su caja.</p>
+    <div class="labels" style="grid-template-columns:1fr;max-width:240px;margin:0 auto"><div class="label">${qrSvg(qrTexto('P',sku))}<div class="lc">${esc(sku)}</div><div class="ln">${esc(p.nombre)}</div></div></div>
+    <label class="f" for="el-cop">Copias (una por bulto)<input id="el-cop" type="number" inputmode="numeric" min="1" max="60" value="${Math.max(1, Math.min(60, qty||1))}"></label>
+    <button class="btn acc full" id="el-desc">Descargar etiqueta para imprimir (PNG)</button>
+    <button class="btn sec" data-prod="${esc(sku)}">Ver la ficha del producto</button>
+    <p class="hint">Para comprobarla: pulsa <b>Escanear</b> y haz una foto a esta etiqueta (desde otra pantalla o impresa). Se abrirá su ficha con el stock y la ubicación.</p>`, el => {
+    el.querySelector('#el-desc').onclick = () => descargarEtiquetaProducto(sku, el.querySelector('#el-cop').value);
+  });
+}
+
+/* ---------- Fichas ---------- */
+function verProducto(sku){
+  const p = prod(sku); if(!p) return;
+  const us = stockDe(sku), t = totalDe(sku), movs = S.movs.filter(m=>m.sku===sku).slice(0,6);
+  sheet(p.nombre, `
+    <div class="det-head"><div class="qr">${qrSvg(qrTexto('P',sku),3)}</div><div><div class="code">${esc(sku)}</div><div class="hint">${esc(p.cat)} · mínimo ${p.min} ${esc(p.ud)}</div><div style="font-size:28px;font-weight:700">${fmt(t)} <span class="hint" style="display:inline">${esc(p.ud)}</span></div>${t<=p.min?'<span class="pill low">Bajo mínimo</span>':''}</div></div>
+    <div class="acciones"><button class="acc-btn in" data-op="entrada" data-sku="${esc(sku)}">Entrada</button><button class="acc-btn out" data-op="salida" data-sku="${esc(sku)}" ${t?'':'disabled'}>Salida</button><button class="acc-btn mv" data-op="mover" data-sku="${esc(sku)}" ${t?'':'disabled'}>Mover</button></div>
+    <button class="btn sec" data-etqprod="${esc(sku)}">Imprimir etiqueta de este producto</button>
+    <h2>Dónde está</h2>
+    <div class="list">${us.length? us.map(x=>`<button class="row" data-ubic="${esc(x.u)}"><span class="main"><span class="t"><span class="code">${esc(x.u)}</span></span><span class="s">${esc(nombreUbic(x.u))}</span></span><span class="n">${fmt(x.q)}</span></button>`).join('') : '<div class="empty">Sin stock en ninguna ubicación.</div>'}</div>
+    ${us.length?`<button class="btn sec" data-vermapa="${esc(us.map(x=>x.u).join(','))}">Ver en el mapa</button>`:''}
+    <h2>Últimos movimientos</h2>
+    <div class="list">${movs.map(movRow).join('') || '<div class="empty">Sin movimientos.</div>'}</div>`);
+}
+function verUbic(u){
+  const c = enUbic(u);
+  sheet(u, `
+    <div class="det-head"><div class="qr">${qrSvg(qrTexto('U',u),3)}</div><div><div style="font-weight:700">${esc(nombreUbic(u))}</div><div class="hint">${c.length? c.length+' referencia(s), '+c.reduce((s,x)=>s+x.q,0)+' uds':'Hueco libre'}</div></div></div>
+    <div class="list">${c.length? c.map(x=>`<button class="row" data-prod="${esc(x.sku)}"><span class="main"><span class="t">${esc(pnom(x.sku))}</span><span class="s"><span class="code">${esc(x.sku)}</span></span></span><span class="n">${fmt(x.q)}</span></button>`).join('') : '<div class="empty">No hay mercancía aquí.</div>'}</div>
+    <div class="acciones"><button class="acc-btn in" data-op="entrada" data-a="${esc(u)}">Entrada aquí</button><button class="acc-btn out" data-op="salida" data-de="${esc(u)}" ${c.length?'':'disabled'}>Salida</button><button class="acc-btn mv" data-op="mover" data-de="${esc(u)}" ${c.length?'':'disabled'}>Mover</button></div>
+    ${esZona(u)?'':`<button class="btn sec" data-recontar="${esc(u)}">Hacer recuento de este hueco</button>`}`);
+}
+
+/* ---------- Operación suelta (entrada / salida / mover) ---------- */
+function operacion(tipo, pre={}){
+  const o = {tipo, sku: pre.sku||'', qty: pre.qty||1, de: pre.de||'', a: pre.a||'', ref: pre.ref||''};
+  if(o.de && !o.sku){ const c = enUbic(o.de); if(c.length===1) o.sku = c[0].sku; }
+  if(tipo!=='entrada' && o.sku && !o.de){ const us=stockDe(o.sku).filter(x=>x.u!=='EXPED'); if(us.length) o.de = us[0].u; }
+  const titulo = {entrada:'Entrada de mercancía', salida:'Salida suelta', mover:'Mover entre ubicaciones'};
+  sheet(titulo[tipo], `<div class="seg" role="group" aria-label="Tipo de operación">
+      <button class="in" data-t="entrada" aria-pressed="${tipo==='entrada'}">Entrada</button><button class="out" data-t="salida" aria-pressed="${tipo==='salida'}">Salida</button><button class="mv" data-t="mover" aria-pressed="${tipo==='mover'}">Mover</button></div>
+    <div class="card" id="op-form"></div>`, el => {
+    el.querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>operacion(b.dataset.t, {sku:o.sku, qty:o.qty, ref:o.ref}));
+    const reabrir = () => operacion(tipo, o);
+    const pintar = () => {
+      const opProd = `<option value="">— Elige o escanea —</option>` + S.productos.map(p=>`<option value="${esc(p.sku)}" ${p.sku===o.sku?'selected':''}>${esc(p.sku)} · ${esc(p.nombre)}</option>`).join('');
+      const origenes = o.sku ? stockDe(o.sku) : [];
+      const opDe = `<option value="">— Elige o escanea —</option>` + origenes.map(x=>`<option value="${esc(x.u)}" ${x.u===o.de?'selected':''}>${esc(x.u)} (${x.q} uds)</option>`).join('');
+      const opA = `<option value="">— Elige o escanea —</option>` + S.ubic.filter(u=>u!==o.de).map(u=>`<option value="${esc(u)}" ${u===o.a?'selected':''}>${esc(u)}${enUbic(u).length?' · ocupada':''}</option>`).join('');
+      const disp = (o.sku && o.de) ? (S.stock[o.sku+'|'+o.de]||0) : null;
+      let aviso = '';
+      if(tipo!=='entrada' && disp!==null && o.qty>disp) aviso = `<p class="hint bad">Solo hay ${disp} en ${esc(o.de)}.</p>`;
+      if(tipo==='mover' && o.a && o.sku){ const otros = enUbic(o.a).filter(x=>x.sku!==o.sku); if(otros.length) aviso += `<p class="hint">Aviso: ${esc(o.a)} ya tiene otra referencia (${esc(otros.map(x=>x.sku).join(', '))}).</p>`; }
+      if(tipo!=='salida' && o.sku && !o.a){ const s = stockDe(o.sku).find(x=>!esZona(x.u)); if(s) aviso += `<p class="hint">Sugerencia: este producto ya está en <b>${esc(s.u)}</b>.</p>`; }
+      el.querySelector('#op-form').innerHTML = `
+        <label class="f" for="op-sku">1 · Producto<div class="with-scan"><select id="op-sku">${opProd}</select><button class="scan-mini" data-scanop="sku" aria-label="Escanear producto">${ICON_SCAN}</button></div></label>
+        ${tipo!=='entrada'?`<label class="f" for="op-de">2 · Ubicación de origen<div class="with-scan"><select id="op-de" ${o.sku?'':'disabled'}>${opDe}</select><button class="scan-mini" data-scanop="de" aria-label="Escanear ubicación de origen">${ICON_SCAN}</button></div></label>`:''}
+        ${tipo!=='salida'?`<label class="f" for="op-a">${tipo==='entrada'?'2':'3'} · Ubicación de destino<div class="with-scan"><select id="op-a">${opA}</select><button class="scan-mini" data-scanop="a" aria-label="Escanear ubicación de destino">${ICON_SCAN}</button></div></label>`:''}
+        <label class="f" for="op-qty">Cantidad${disp!==null?` <span class="hint" style="font-weight:400;display:inline">(disponible ${disp})</span>`:''}<input id="op-qty" type="number" inputmode="numeric" min="1" value="${o.qty}"></label>
+        <label class="f" for="op-ref">${tipo==='entrada'?'Albarán del proveedor':tipo==='salida'?'Nº de pedido / cliente':'Motivo'} (opcional)<input id="op-ref" type="text" maxlength="40" value="${esc(o.ref)}" placeholder="${tipo==='entrada'?'ALB-2026-0440':tipo==='salida'?'PED-1210':'Reposición picking'}"></label>
+        ${aviso}
+        <button class="btn full ${tipo==='entrada'?'okb':tipo==='salida'?'badb':''}" id="op-ok" ${tipo==='mover'?'style="background:#2d5279"':''}>Confirmar ${tipoTxt[tipo].toLowerCase()}</button>`;
+      const f = el.querySelector('#op-form');
+      f.querySelector('#op-sku').onchange = e=>{ o.sku=e.target.value; if(tipo!=='entrada'){ const us=stockDe(o.sku); o.de = us[0]?us[0].u:''; } pintar(); };
+      const de=f.querySelector('#op-de'); if(de) de.onchange=e=>{o.de=e.target.value; pintar();};
+      const a=f.querySelector('#op-a'); if(a) a.onchange=e=>{o.a=e.target.value; pintar();};
+      f.querySelector('#op-qty').oninput=e=>{o.qty=Math.max(0,parseInt(e.target.value,10)||0);};
+      f.querySelector('#op-qty').onchange=()=>pintar();
+      f.querySelector('#op-ref').oninput=e=>{o.ref=e.target.value;};
+      f.querySelectorAll('[data-scanop]').forEach(b=>b.onclick=()=>{ const campo=b.dataset.scanop; escanear({modo:'campo', espera: campo==='sku'?'P':'U', alLeer: r=>{ o[campo]=r.val; if(campo==='sku' && tipo!=='entrada' && !o.de){ const us=stockDe(o.sku); o.de=us[0]?us[0].u:''; } reabrir(); }}); });
+      f.querySelector('#op-ok').onclick = () => confirmar(o);
+    };
+    pintar();
+  });
+}
+function confirmar(o){
+  if(!prod(o.sku)) return toast('Elige un producto', true);
+  if(!(o.qty>0)) return toast('Pon una cantidad', true);
+  if(o.tipo!=='salida' && !o.a) return toast('Elige la ubicación de destino', true);
+  if(o.tipo!=='entrada'){ if(!o.de) return toast('Elige la ubicación de origen', true); const d=S.stock[o.sku+'|'+o.de]||0; if(o.qty>d) return toast(`Solo hay ${d} en ${o.de}`, true); }
+  mover(o.sku, o.tipo==='entrada'?null:o.de, o.tipo==='salida'?null:o.a, o.qty);
+  registrar(o.tipo, o.sku, o.qty, o.tipo==='entrada'?null:o.de, o.tipo==='salida'?null:o.a, (o.ref||'').trim());
+  guardar(); cerrarSheet(); render();
+  toast(`${tipoTxt[o.tipo]} registrada: ${o.qty} × ${o.sku}`);
+}
+
+/* ---------- Escáner ---------- */
+let stream = null, raf = 0;
+function pararCamara(){ cancelAnimationFrame(raf); if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; } }
+function escanear(cfg){
+  const titulo = cfg.modo==='global' ? 'Escanear código QR' : (cfg.espera==='P' ? 'Escanear producto' : 'Escanear estantería');
+  const codigos = cfg.espera==='P' ? S.productos.map(p=>({c:p.sku,n:p.nombre,t:'P'})) : cfg.espera==='U' ? S.ubic.map(u=>({c:u,n:nombreUbic(u),t:'U'})) : [...S.productos.map(p=>({c:p.sku,n:p.nombre,t:'P'})), ...S.ubic.slice(0,8).map(u=>({c:u,n:nombreUbic(u),t:'U'}))];
+  const sug = cfg.sugerido ? interpretar(cfg.sugerido) : null;
+  sheet(titulo, `
+    <div class="video-box" id="vbox" hidden><video id="vid" playsinline muted></video><div class="frame"></div></div>
+    <button class="photo-btn" id="btn-foto"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>Hacer foto del código QR<small>Se abre la cámara del móvil. Encuadra la etiqueta y haz la foto.</small></button>
+    <p class="hint" id="scan-msg" role="status"></p>
+    ${sug?`<button class="sim-ok" data-sim="${esc(cfg.sugerido)}"><b>Demo:</b> simular lectura de <span class="code">${esc(sug.val)}</span></button>`:''}
+    <label class="f" for="manual">O escribe el código<div class="with-scan"><input id="manual" placeholder="${cfg.espera==='U'?'A-01-2':'ELV-2C-4T'}" autocomplete="off" autocapitalize="characters"><button class="scan-mini" id="manual-ok" aria-label="Usar código">OK</button></div></label>
+    <details><summary class="hint">Simular otra lectura (para probar desde el ordenador)</summary><div class="list" style="margin-top:8px;max-height:240px;overflow:auto">${codigos.map(x=>`<button class="row" data-sim="${esc(qrTexto(x.t,x.c))}"><span class="code">${esc(x.c)}</span><span class="main"><span class="s">${esc(x.n)}</span></span></button>`).join('')}</div></details>`, el => {
+    const msg = el.querySelector('#scan-msg');
+    const usar = txt => { const r = interpretar(txt); if(!r){ msg.className='hint bad'; msg.textContent='Código no reconocido en este almacén.'; vibrar([80,60,80]); return; } if(cfg.espera && r.tipo!==cfg.espera){ msg.className='hint bad'; msg.textContent= cfg.espera==='P' ? 'Eso es una estantería; escanea la etiqueta del producto.' : 'Eso es un producto; escanea la etiqueta de la estantería.'; vibrar([80,60,80]); return; } vibrar(60); pararCamara(); cerrarSheet(); if(cfg.alLeer) cfg.alLeer(r); else { if(r.tipo==='P') verProducto(r.val); else verUbic(r.val); toast('Leído: '+r.val); } };
+    el.querySelector('#btn-foto').onclick = () => { const f=$('#foto'); f.value=''; f.onchange = () => { const file=f.files[0]; if(!file) return; msg.className='hint'; msg.textContent='Leyendo la foto…'; leerFoto(file).then(t=>{ if(t) usar(t); else { msg.className='hint bad'; msg.textContent='No se ve ningún QR en la foto. Acércate un poco más y evita reflejos.'; } }).catch(()=>{ msg.className='hint bad'; msg.textContent='No se ha podido abrir la foto.'; }); }; f.click(); };
+    el.querySelector('#manual-ok').onclick = () => usar(el.querySelector('#manual').value);
+    el.querySelector('#manual').onkeydown = e => { if(e.key==='Enter') usar(e.target.value); };
+    el.querySelectorAll('[data-sim]').forEach(b=>b.onclick=()=>usar(b.dataset.sim));
+    if(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.jsQR){
+      navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}}).then(s=>{
+        if(!document.body.contains(el)){ s.getTracks().forEach(t=>t.stop()); return; }
+        stream=s; const v=el.querySelector('#vid'); v.srcObject=s; v.play(); el.querySelector('#vbox').hidden=false;
+        const c=document.createElement('canvas'), ctx=c.getContext('2d',{willReadFrequently:true});
+        const tick=()=>{ if(!stream) return; if(v.readyState>=2){ const w=Math.min(640,v.videoWidth), h=Math.round(v.videoHeight*w/v.videoWidth); c.width=w; c.height=h; ctx.drawImage(v,0,0,w,h); const r=jsQR(ctx.getImageData(0,0,w,h).data,w,h,{inversionAttempts:'dontInvert'}); if(r&&r.data){ usar(r.data); return; } } raf=requestAnimationFrame(tick); };
+        tick();
+      }).catch(()=>{});
+    }
+  });
+}
+function leerFoto(file){
+  return new Promise((ok, mal) => {
+    if(!window.jsQR) return mal(new Error('sin lector'));
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onload = () => {
+      const c=document.createElement('canvas'), ctx=c.getContext('2d',{willReadFrequently:true});
+      let res=null;
+      for(const max of [1400, 900, 2000]){
+        const k=Math.min(1, max/Math.max(img.width,img.height)); c.width=Math.round(img.width*k); c.height=Math.round(img.height*k);
+        ctx.drawImage(img,0,0,c.width,c.height);
+        const r=jsQR(ctx.getImageData(0,0,c.width,c.height).data,c.width,c.height,{inversionAttempts:'attemptBoth'});
+        if(r&&r.data){ res=r.data; break; }
+      }
+      URL.revokeObjectURL(url); ok(res);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); mal(new Error('imagen')); };
+    img.src = url;
+  });
+}
+
+/* ---------- Eventos ---------- */
+function montar(){
+  const q=$('#q-stock'); if(q){ q.oninput=e=>{ filtroStock=e.target.value; const pos=e.target.selectionStart; render(); const n=$('#q-stock'); n.focus(); try{n.setSelectionRange(pos,pos);}catch(_){} }; }
+  const r=$('#btn-reset'); if(r) r.onclick=()=>{ if(r.dataset.conf){ S=seed(); pick=null; inv=null; guardar(); render(); toast('Demo reiniciada'); } else { r.dataset.conf='1'; r.textContent='Toca otra vez para confirmar'; setTimeout(()=>{ if(document.body.contains(r)){ delete r.dataset.conf; r.textContent='Reiniciar demo'; } },3000); } };
+  const d=$('#btn-desc-etq'); if(d) d.onclick=descargarEtiquetas;
+  const np=$('#btn-nuevo-pedido'); if(np) np.onclick=nuevoPedido;
+  const bi=$('#btn-inv'); if(bi) bi.onclick=empezarInventario;
+  const cs=$('#csv-stock'); if(cs) cs.onclick=()=>descargar('stock-por-ubicacion.csv', [['Referencia','Producto','Categoría','Ubicación','Cantidad','Unidad'], ...Object.entries(S.stock).filter(([k,q])=>q>0).map(([k,q])=>{ const [s,u]=k.split('|'); const p=prod(s)||{}; return [s,p.nombre,p.cat,u,q,p.ud]; }).sort((a,b)=>ordenUbic(a[3],b[3]))]);
+  const cm=$('#csv-movs'); if(cm) cm.onclick=()=>descargar('movimientos.csv', [['Fecha','Hora','Tipo','Referencia','Producto','Cantidad','Origen','Destino','Documento','Operario'], ...S.movs.map(m=>{ const dt=new Date(m.t); return [dt.toLocaleDateString('es-ES'), dt.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}), tipoTxt[m.tipo], m.sku, pnom(m.sku), m.qty, m.de||'', m.a||'', m.ref, m.user]; })]);
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if(!b) return;
+  const ds = b.dataset;
+  if(ds.go){ ir(ds.go); return; }
+  if(ds.go2){ cerrarSheet(); ir(ds.go2); return; }
+  if(ds.op){ operacion(ds.op, {sku:ds.sku, de:ds.de, a:ds.a}); return; }
+  if(ds.ubicar){ const sku=ds.ubicar; const s=stockDe(sku).find(x=>!esZona(x.u)); operacion('mover',{sku, de:'MUELLE-ENT', qty:S.stock[sku+'|MUELLE-ENT'], a:s?s.u:''}); return; }
+  if(ds.prod){ verProducto(ds.prod); return; }
+  if(ds.ubic && !b.closest('.sheet .paso')){ verUbic(ds.ubic); return; }
+  if(ds.vermapa){ resaltar=ds.vermapa.split(','); stockModo='mapa'; cerrarSheet(); ir('stock'); return; }
+  if(ds.cat){ catSel=ds.cat; render(); return; }
+  if(ds.fmov){ filtroMov=ds.fmov; render(); return; }
+  if(ds.etq){ etqTipo=ds.etq; render(); return; }
+  if(ds.smodo){ stockModo=ds.smodo; render(); return; }
+  if(ds.ttab){ tareaTab=ds.ttab; render(); return; }
+  if(ds.tarea){ tareaTab=ds.tarea; ir('tareas'); return; }
+  if(ds.pedido){ abrirPedido(ds.pedido); return; }
+  if(ds.recep){ abrirRecepcion(ds.recep); return; }
+  if(ds.recontar){ inv={ubic:ds.recontar, cont:{}}; enUbic(ds.recontar).forEach(x=>inv.cont[x.sku]=''); abrirInventario(); return; }
+  if(ds.scanglobal){ escanear({modo:'global'}); return; }
+  if(ds.nuevoprod){ nuevoProducto(); return; }
+  if(ds.etqprod){ etiquetaLista(ds.etqprod, 0, ''); return; }
+});
+$('#btn-user').onclick = () => { S.user = OPERARIOS[(OPERARIOS.indexOf(S.user)+1)%OPERARIOS.length]; guardar(); render(); toast('Ahora trabajas como '+S.user); };
+document.addEventListener('keydown', e => { if(e.key==='Escape'){ cerrarSheet(); render(); } });
+render();
+})();
+</script>
+<script>if('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));</script>
+</body>
+</html>

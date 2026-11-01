@@ -1,0 +1,16 @@
+{
+  "name": "almacenqr",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Demo de programa de gestión de almacén (SGA) con códigos QR para móvil o PDA",
+  "scripts": {
+    "test": "node test/flujo.test.js",
+    "start": "npx --yes serve ."
+  },
+  "author": "David Molero Berrocal",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "jsdom": "^24.1.3",
+    "qrcode-generator": "^1.4.4"
+  }
+}
